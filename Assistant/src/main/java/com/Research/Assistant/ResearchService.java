@@ -1,18 +1,75 @@
 package com.Research.Assistant;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
+
+import java.util.Map;
 
 @Service
 public class ResearchService {
+    @Value("${gemini.api.url}")
+    private  String genimiApiUrl;
+    @Value("${gemini.api.key}")
+    private String geminiApiKey;
+
+    private final WebClient webClient;
+    private final ObjectMapper objectMapper;
+
+    public ResearchService(WebClient.Builder webClient , ObjectMapper objectMapper) {
+        this.webClient = WebClient.builder().build();
+        this.objectMapper=objectMapper;
+    }
+
     public String processContent(ResearchRequest request) {
 
         //Build prompt
+        String prompt = buildPrompt(request);
         //query ai model api
+        Map<String, Object> requestBody = Map.of(
+                "contents", new Object[]{
+                        Map.of(
+                                "parts", new Object[]{
+                                        Map.of("text", prompt)
+                                }
+                        )
+                }
+        );
+        String response = webClient.post()
+                .uri(genimiApiUrl+geminiApiKey )
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+
         //parse the response
         //return response
 
-return "";
+        return extractTextFromResponse(response);
+
     }
+
+    private String extractTextFromResponse(String response) {
+        try{
+            GeminiResponse geminiResponse = objectMapper.readValue(response,GeminiResponse.class);
+           if(geminiResponse.getCandidates()!=null && ! geminiResponse.getCandidates().isEmpty()){
+               GeminiResponse.Candidate firstCandidate= geminiResponse.getCandidates().get(0);
+               if (firstCandidate.getContent()!=null && firstCandidate.getContent().getParts()!=null && !firstCandidate.getContent().getParts().isEmpty()){
+                   return firstCandidate.getContent().getParts().get(0).getText();
+               }
+           }
+
+return "No content found in response";
+        }
+
+        catch (Exception e){
+            return "Error Parsing :"+e.getMessage();
+
+        }
+
+    }
+
     private String buildPrompt(ResearchRequest request){
         StringBuilder prompt =new StringBuilder();
         switch (request.getOperation()){
